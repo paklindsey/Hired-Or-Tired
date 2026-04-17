@@ -1,39 +1,43 @@
 import { useState, useEffect } from 'react'
 import hotLogo from './assets/hotlogo.svg'
 import { parseJobDescription } from './parseJob'
+import { supabase } from './supabase'
 import './App.css'
 
 const STATUSES = ['applied', 'interviewing', 'offer', 'rejected', 'withdrawn']
 const PRIORITIES = ['high', 'medium', 'low']
 
-const SAMPLE_DATA = [
-  {
-    id: 1,
-    date: '2026-04-15',
-    company: 'Figma',
-    role: 'Project Manager',
-    salary: '$100,000',
-    status: 'applied',
-    resumeVersion: 'v3',
-    priority: 'high',
-    reference: 'LinkedIn',
-    notes: '',
-  },
-]
+function toRow(app) {
+  return {
+    date: app.date,
+    company: app.company,
+    role: app.role,
+    salary: app.salary,
+    status: app.status,
+    resume_version: app.resumeVersion,
+    priority: app.priority,
+    reference: app.reference,
+    reference_url: app.referenceUrl,
+    notes: app.notes,
+    job_description: app.jobDescription,
+  }
+}
 
-function useLocalStorage(key, initial) {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key)
-      return stored ? JSON.parse(stored) : initial
-    } catch {
-      return initial
-    }
-  })
-  useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(value))
-  }, [key, value])
-  return [value, setValue]
+function fromRow(row) {
+  return {
+    id: row.id,
+    date: row.date,
+    company: row.company,
+    role: row.role,
+    salary: row.salary,
+    status: row.status,
+    resumeVersion: row.resume_version,
+    priority: row.priority,
+    reference: row.reference,
+    referenceUrl: row.reference_url,
+    notes: row.notes,
+    jobDescription: row.job_description,
+  }
 }
 
 function statusBadgeClass(status) {
@@ -50,7 +54,7 @@ function formatDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function computeStats(apps, prevApps) {
+function computeStats(apps) {
   const total = apps.length
   const interviewing = apps.filter(a => a.status === 'interviewing').length
   const offers = apps.filter(a => a.status === 'offer').length
@@ -73,36 +77,52 @@ const EMPTY_FORM = {
   resumeVersion: '',
   priority: 'medium',
   reference: '',
+  referenceUrl: '',
   notes: '',
+  jobDescription: '',
 }
 
 export default function App() {
-  const [apps, setApps] = useLocalStorage('hot-apps', SAMPLE_DATA)
+  const [apps, setApps] = useState([])
+  const [loading, setLoading] = useState(true)
   const [view, setView] = useState('list')
   const [showAdd, setShowAdd] = useState(false)
-  const [addTab, setAddTab] = useState('manual')
+  const [addTab, setAddTab] = useState('smart')
   const [form, setForm] = useState(EMPTY_FORM)
   const [selected, setSelected] = useState(null)
   const [editForm, setEditForm] = useState(null)
 
+  useEffect(() => {
+    supabase.from('applications').select('*').order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error('fetch error:', error)
+        if (!error && data) setApps(data.map(fromRow))
+        setLoading(false)
+      })
+  }, [])
+
   const stats = computeStats(apps)
 
-  function addApp(e) {
+  async function addApp(e) {
     e.preventDefault()
-    const newApp = { ...form, id: Date.now() }
-    setApps(prev => [newApp, ...prev])
+    const { data, error } = await supabase.from('applications').insert([toRow(form)]).select().single()
+    if (error) { console.error('insert error:', error); return }
+    console.log('insert result:', data)
+    if (data) setApps(prev => [fromRow(data), ...prev])
     setForm(EMPTY_FORM)
     setShowAdd(false)
   }
 
-  function deleteApp(id) {
+  async function deleteApp(id) {
+    await supabase.from('applications').delete().eq('id', id)
     setApps(prev => prev.filter(a => a.id !== id))
     setSelected(null)
   }
 
-  function saveEdit(e) {
+  async function saveEdit(e) {
     e.preventDefault()
-    setApps(prev => prev.map(a => a.id === selected.id ? { ...editForm, id: selected.id } : a))
+    const { data, error } = await supabase.from('applications').update(toRow(editForm)).eq('id', selected.id).select().single()
+    if (!error && data) setApps(prev => prev.map(a => a.id === selected.id ? fromRow(data) : a))
     setSelected(null)
     setEditForm(null)
   }
@@ -111,6 +131,8 @@ export default function App() {
     setSelected(app)
     setEditForm({ ...app })
   }
+
+  if (loading) return <div className="app-loading">Loading...</div>
 
   return (
     <div className="app">
@@ -170,7 +192,11 @@ export default function App() {
                   <td><span className={statusBadgeClass(app.status)}>{app.status}</span></td>
                   <td>{app.resumeVersion || '—'}</td>
                   <td>{app.priority ? <span className={priorityBadgeClass(app.priority)}>{app.priority}</span> : '—'}</td>
-                  <td>{app.reference || '—'}</td>
+                  <td>
+                    {app.referenceUrl
+                      ? <a href={app.referenceUrl} target="_blank" rel="noopener noreferrer" className="reference-link" onClick={e => e.stopPropagation()}>{app.reference || app.referenceUrl}</a>
+                      : app.reference || '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -183,8 +209,8 @@ export default function App() {
       {showAdd && (
         <Modal title="New Application" onClose={() => { setShowAdd(false); setAddTab('manual') }}>
           <div className="modal-tabs">
-            <button className={`modal-tab${addTab === 'manual' ? ' active' : ''}`} type="button" onClick={() => setAddTab('manual')}>Manual</button>
             <button className={`modal-tab${addTab === 'smart' ? ' active' : ''}`} type="button" onClick={() => setAddTab('smart')}>Smart Paste</button>
+            <button className={`modal-tab${addTab === 'manual' ? ' active' : ''}`} type="button" onClick={() => setAddTab('manual')}>Manual</button>
           </div>
           {addTab === 'smart' ? (
             <SmartPaste onParsed={parsed => { setForm(f => ({ ...f, ...parsed })); setAddTab('manual') }} />
@@ -320,31 +346,46 @@ function AppForm({ form, setForm }) {
         <input className="form-input" type="text" value={form.reference} onChange={set('reference')} placeholder="e.g. LinkedIn" />
       </div>
       <div className="form-group full">
+        <label className="form-label">Listing URL</label>
+        <input className="form-input" type="url" value={form.referenceUrl} onChange={set('referenceUrl')} placeholder="https://..." />
+      </div>
+      <div className="form-group full">
         <label className="form-label">Notes</label>
         <textarea className="form-input" value={form.notes} onChange={set('notes')} placeholder="Any notes..." rows={3} style={{ resize: 'vertical' }} />
+      </div>
+      <div className="form-group full">
+        <label className="form-label">Job Description</label>
+        <textarea className="form-input job-description-area" value={form.jobDescription} onChange={set('jobDescription')} placeholder="Paste the full job description here..." rows={12} style={{ resize: 'vertical' }} />
       </div>
     </div>
   )
 }
 
 function SmartPaste({ onParsed }) {
+  const [smartTab, setSmartTab] = useState('url')
   const [text, setText] = useState('')
+  const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  async function extractFromText(content, referenceUrl) {
+    const parsed = await parseJobDescription(content)
+    const clean = {}
+    if (parsed.company) clean.company = parsed.company
+    if (parsed.role) clean.role = parsed.role
+    if (parsed.salary) clean.salary = parsed.salary
+    if (parsed.reference) clean.reference = parsed.reference
+    if (parsed.jobDescription) clean.jobDescription = parsed.jobDescription
+    if (referenceUrl) clean.referenceUrl = referenceUrl
+    onParsed(clean)
+  }
 
   async function handleExtract() {
     if (!text.trim()) return
     setLoading(true)
     setError(null)
     try {
-      const parsed = await parseJobDescription(text.trim())
-      const clean = {}
-      if (parsed.company) clean.company = parsed.company
-      if (parsed.role) clean.role = parsed.role
-      if (parsed.salary) clean.salary = parsed.salary
-      if (parsed.reference) clean.reference = parsed.reference
-      if (parsed.notes) clean.notes = parsed.notes
-      onParsed(clean)
+      await extractFromText(text.trim())
     } catch (err) {
       setError(err?.message || 'Could not extract details. Check your API key or try again.')
     } finally {
@@ -352,23 +393,83 @@ function SmartPaste({ onParsed }) {
     }
   }
 
+  async function handleUrlExtract() {
+    if (!url.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url.trim())}`
+      const res = await fetch(proxyUrl)
+      if (!res.ok) throw new Error(`Failed to fetch URL (HTTP ${res.status})`)
+      const pageText = await res.text()
+      if (!pageText) throw new Error('No content returned from URL')
+      const clean = pageText
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      if (!clean) throw new Error('Page appears to be empty')
+      await extractFromText(clean.slice(0, 8000), url.trim())
+    } catch (err) {
+      setError(err?.message || 'Could not fetch or parse the URL. Try pasting the text instead.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="smart-paste">
-      <p className="smart-paste-hint">Paste a job description below — Gemini will extract the details for you.</p>
-      <textarea
-        className="form-input smart-paste-area"
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="Paste job description text here..."
-        rows={10}
-        autoFocus
-      />
-      {error && <p className="smart-paste-error">{error}</p>}
-      <div className="form-actions">
-        <button type="button" className="btn-submit" onClick={handleExtract} disabled={!text.trim() || loading}>
-          {loading ? 'Extracting...' : 'Extract Info'}
-        </button>
+      <div className="smart-paste-tabs">
+        <button
+          type="button"
+          className={`smart-paste-tab${smartTab === 'url' ? ' active' : ''}`}
+          onClick={() => setSmartTab('url')}
+        >URL</button>
+        <button
+          type="button"
+          className={`smart-paste-tab${smartTab === 'paste' ? ' active' : ''}`}
+          onClick={() => setSmartTab('paste')}
+        >Paste Text</button>
       </div>
+
+      {smartTab === 'paste' ? (
+        <>
+          <p className="smart-paste-hint">Paste a job description below — AI will extract the details for you.</p>
+          <textarea
+            className="form-input smart-paste-area"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Paste job description text here..."
+            rows={10}
+            autoFocus
+          />
+          {error && <p className="smart-paste-error">{error}</p>}
+          <div className="form-actions">
+            <button type="button" className="btn-submit" onClick={handleExtract} disabled={!text.trim() || loading}>
+              {loading ? 'Extracting...' : 'Extract Info'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="smart-paste-hint">Paste a job posting URL — AI will fetch and extract the details for you.</p>
+          <input
+            className="form-input"
+            type="url"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="https://jobs.example.com/posting/123"
+            autoFocus
+          />
+          {error && <p className="smart-paste-error">{error}</p>}
+          <div className="form-actions">
+            <button type="button" className="btn-submit" onClick={handleUrlExtract} disabled={!url.trim() || loading}>
+              {loading ? 'Fetching...' : 'Extract Info'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

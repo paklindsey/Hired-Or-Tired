@@ -2,16 +2,17 @@ const API_KEY = import.meta.env.VITE_GROQ_API_KEY
 const MODEL = 'llama-3.3-70b-versatile'
 
 export async function parseJobDescription(text) {
-  const prompt = `Extract job application details from the following job description. Return ONLY a JSON object with these fields (use null for anything not found):
+  const prompt = `Extract job application details from the following content. Return ONLY a JSON object with these fields (use null for anything not found):
 {
   "company": string,
   "role": string,
   "salary": string,
   "reference": string (e.g. "LinkedIn", "Indeed", "Company website" — infer from context if possible),
-  "notes": string (1-2 sentence summary: team, tech stack, location, remote/hybrid, standout requirements)
+  "notes": string (1-2 sentence summary: team, tech stack, location, remote/hybrid, standout requirements),
+  "jobDescription": string (the full job description text only — responsibilities, requirements, about the role — no boilerplate, nav, footer, or unrelated page content. Format with clear section headers in ALL CAPS followed by a colon, blank lines between sections, and bullet points using "• " for list items)
 }
 
-Job description:
+Content:
 ${text}`
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -37,5 +38,8 @@ ${text}`
   if (!raw) throw new Error('Empty response from Groq')
   const jsonMatch = raw.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Could not parse JSON from response')
-  return JSON.parse(jsonMatch[0])
+  const sanitized = jsonMatch[0].replace(/"(?:[^"\\]|\\.)*"/g, m =>
+    m.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+  )
+  return JSON.parse(sanitized)
 }

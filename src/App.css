@@ -4,6 +4,15 @@
   padding: 0 32px 48px;
 }
 
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: rgba(255,255,255,0.3);
+  font-size: 14px;
+}
+
 /* Header */
 .header {
   display: flex;
@@ -186,6 +195,14 @@ tbody td {
   cursor: default;
 }
 .empty-row:hover { background: none !important; }
+
+.reference-link {
+  color: rgba(255,255,255,0.75);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.reference-link:hover { color: #fff; }
 
 /* Badges */
 .badge {
@@ -417,6 +434,41 @@ tbody td {
   color: #fff;
 }
 .modal-tab:hover:not(.active) { color: rgba(255,255,255,0.7); }
+
+/* Smart paste sub-tabs */
+.smart-paste-tabs {
+  display: flex;
+  gap: 4px;
+  background: #1a1a1a;
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.smart-paste-tab {
+  flex: 1;
+  padding: 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  background: none;
+  color: rgba(255,255,255,0.4);
+  transition: all 0.15s;
+}
+.smart-paste-tab.active {
+  background: #2e2e2e;
+  color: #fff;
+}
+.smart-paste-tab:hover:not(.active) { color: rgba(255,255,255,0.7); }
+
+/* Job description */
+.job-description-area {
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+}
 
 /* Smart paste */
 .smart-paste-hint {
