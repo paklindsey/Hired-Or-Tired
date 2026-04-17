@@ -83,6 +83,8 @@ const EMPTY_FORM = {
 }
 
 export default function App() {
+  const [session, setSession] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('list')
@@ -93,19 +95,32 @@ export default function App() {
   const [editForm, setEditForm] = useState(null)
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setAuthLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!session) { setApps([]); setLoading(false); return }
+    setLoading(true)
     supabase.from('applications').select('*').order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error('fetch error:', error)
         if (!error && data) setApps(data.map(fromRow))
         setLoading(false)
       })
-  }, [])
+  }, [session])
 
   const stats = computeStats(apps)
 
   async function addApp(e) {
     e.preventDefault()
-    const { data, error } = await supabase.from('applications').insert([toRow(form)]).select().single()
+    const { data, error } = await supabase.from('applications').insert([{ ...toRow(form), user_id: session.user.id }]).select().single()
     if (error) { console.error('insert error:', error); return }
     console.log('insert result:', data)
     if (data) setApps(prev => [fromRow(data), ...prev])
@@ -132,6 +147,9 @@ export default function App() {
     setEditForm({ ...app })
   }
 
+  if (authLoading) return <div className="app-loading">Loading...</div>
+  if (!session) return <LoginScreen />
+
   if (loading) return <div className="app-loading">Loading...</div>
 
   return (
@@ -139,12 +157,18 @@ export default function App() {
       <header className="header">
         <span className="header-title">HIRED OR TIRED</span>
         <img src={hotLogo} alt="Hired or Tired" className="logo-img" />
-        <button className="profile-btn" title="Profile">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-          </svg>
-        </button>
+        <div className="profile-menu">
+          <button className="profile-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+            </svg>
+          </button>
+          <div className="profile-dropdown">
+            <p className="profile-email">{session.user.email}</p>
+            <button className="profile-signout" onClick={() => supabase.auth.signOut()}>Log Out</button>
+          </div>
+        </div>
       </header>
 
       <div className="stats-grid">
@@ -469,6 +493,53 @@ function SmartPaste({ onParsed }) {
             </button>
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    })
+    if (error) setError(error.message)
+    else setSent(true)
+    setLoading(false)
+  }
+
+  return (
+    <div className="login-screen">
+      <img src={hotLogo} alt="Hired or Tired" className="login-logo" />
+      <h1 className="login-title">HIRED OR TIRED</h1>
+      <p className="login-subtitle">Track your job applications</p>
+      {sent ? (
+        <p className="login-sent">Check your email for a magic link to sign in.</p>
+      ) : (
+        <form className="login-form" onSubmit={handleSubmit}>
+          <input
+            className="form-input"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            autoFocus
+          />
+          {error && <p className="smart-paste-error">{error}</p>}
+          <button type="submit" className="btn-submit" disabled={loading}>
+            {loading ? 'Sending...' : 'Send magic link'}
+          </button>
+        </form>
       )}
     </div>
   )
