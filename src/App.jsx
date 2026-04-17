@@ -499,21 +499,25 @@ function SmartPaste({ onParsed }) {
 }
 
 function LoginScreen() {
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sent, setSent] = useState(false)
   const [error, setError] = useState(null)
+  const [signedUp, setSignedUp] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    if (error) setError(error.message)
-    else setSent(true)
+    if (mode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setError(error.message)
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password })
+      if (error) setError(error.message)
+      else setSignedUp(true)
+    }
     setLoading(false)
   }
 
@@ -522,25 +526,33 @@ function LoginScreen() {
       <img src={hotLogo} alt="Hired or Tired" className="login-logo" />
       <h1 className="login-title">HIRED OR TIRED</h1>
       <p className="login-subtitle">Track your job applications</p>
-      {sent ? (
-        <p className="login-sent">Check your email for a magic link to sign in.</p>
-      ) : (
-        <form className="login-form" onSubmit={handleSubmit}>
-          <input
-            className="form-input"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-            autoFocus
-          />
-          {error && <p className="smart-paste-error">{error}</p>}
-          <button type="submit" className="btn-submit" disabled={loading}>
-            {loading ? 'Sending...' : 'Send magic link'}
-          </button>
-        </form>
-      )}
+      {signedUp && <p className="login-success">Account created! Sign in below.</p>}
+      <form className="login-form" onSubmit={handleSubmit}>
+        <input
+          className="form-input"
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          required
+          autoFocus
+        />
+        <input
+          className="form-input"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+        />
+        {error && <p className="smart-paste-error">{error}</p>}
+        <button type="submit" className="btn-submit" disabled={loading}>
+          {loading ? '...' : mode === 'login' ? 'Sign in' : 'Create account'}
+        </button>
+      </form>
+      <button className="login-toggle" onClick={() => { setMode(m => m === 'login' ? 'signup' : 'login'); setError(null) }}>
+        {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+      </button>
     </div>
   )
 }
