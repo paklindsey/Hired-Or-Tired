@@ -703,10 +703,24 @@ function SmartPaste({ onParsed }) {
     setLoading(true);
     setError(null);
     try {
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url.trim())}`;
-      const res = await fetch(proxyUrl);
-      if (!res.ok) throw new Error(`Failed to fetch URL (HTTP ${res.status})`);
-      const pageText = await res.text();
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url.trim())}`,
+        `https://corsproxy.io/?url=${encodeURIComponent(url.trim())}`,
+      ];
+      let pageText = null;
+      let lastStatus = null;
+      for (const proxyUrl of proxies) {
+        try {
+          const res = await fetch(proxyUrl);
+          if (!res.ok) { lastStatus = res.status; continue; }
+          pageText = await res.text();
+          if (pageText) break;
+        } catch {
+          continue;
+        }
+      }
+      if (!pageText && lastStatus) throw new Error(`Failed to fetch URL (HTTP ${lastStatus})`);
+      if (!pageText) throw new Error("Failed to fetch URL");
       if (!pageText) throw new Error("No content returned from URL");
       const clean = pageText
         .replace(/<style[\s\S]*?<\/style>/gi, "")
