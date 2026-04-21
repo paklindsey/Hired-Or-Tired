@@ -14,7 +14,6 @@ serve(async (req) => {
     const { url } = await req.json();
     if (!url) {
       return new Response(JSON.stringify({ error: "Missing url" }), {
-        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -28,7 +27,6 @@ serve(async (req) => {
 
     if (!res.ok) {
       return new Response(JSON.stringify({ error: `HTTP ${res.status}` }), {
-        status: res.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -39,7 +37,6 @@ serve(async (req) => {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
