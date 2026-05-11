@@ -102,6 +102,7 @@ export default function App() {
   const [view, setView] = useState("list");
   const [showAdd, setShowAdd] = useState(false);
   const [addTab, setAddTab] = useState("smart");
+  const [addError, setAddError] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selected, setSelected] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -205,9 +206,9 @@ export default function App() {
       .single();
     if (error) {
       console.error("insert error:", error);
+      setAddError(error.message);
       return;
     }
-    console.log("insert result:", data);
     if (data) setApps((prev) => [fromRow(data), ...prev]);
     setForm(EMPTY_FORM);
     setShowAdd(false);
@@ -435,6 +436,7 @@ export default function App() {
           onClose={() => {
             setShowAdd(false);
             setAddTab("manual");
+            setAddError(null);
           }}
         >
           <div className="modal-tabs">
@@ -463,6 +465,7 @@ export default function App() {
           ) : (
             <form onSubmit={addApp}>
               <AppForm form={form} setForm={setForm} categories={allCategories} />
+              {addError && <p className="smart-paste-error" style={{ marginTop: 8 }}>{addError}</p>}
               <div className="form-actions">
                 <button
                   type="button"
