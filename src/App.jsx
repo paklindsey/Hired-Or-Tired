@@ -20,7 +20,6 @@ function toRow(app) {
     reference_url: app.referenceUrl,
     notes: app.notes,
     job_description: app.jobDescription,
-    category: app.category || null,
   };
 }
 
@@ -38,8 +37,21 @@ function fromRow(row) {
     referenceUrl: row.reference_url,
     notes: row.notes,
     jobDescription: row.job_description,
-    category: row.category,
   };
+}
+
+function loadCategoryMap() {
+  try { return JSON.parse(localStorage.getItem("hot_category_map") || "{}"); }
+  catch { return {}; }
+}
+
+function saveCategoryMap(map) {
+  localStorage.setItem("hot_category_map", JSON.stringify(map));
+}
+
+function mergeCategoryMap(apps) {
+  const map = loadCategoryMap();
+  return apps.map((a) => ({ ...a, category: map[a.id] || null }));
 }
 
 function statusBadgeClass(status) {
@@ -145,7 +157,7 @@ export default function App() {
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("fetch error:", error);
-        if (!error && data) setApps(data.map(fromRow));
+        if (!error && data) setApps(mergeCategoryMap(data.map(fromRow)));
         setLoading(false);
       });
   }, [session, guestMode]);
@@ -209,8 +221,14 @@ export default function App() {
       setAddError(error.message);
       return;
     }
-    if (data) setApps((prev) => [fromRow(data), ...prev]);
+    if (data) {
+      const map = loadCategoryMap();
+      if (form.category) map[data.id] = form.category;
+      saveCategoryMap(map);
+      setApps((prev) => [{ ...fromRow(data), category: form.category || null }, ...prev]);
+    }
     setForm(EMPTY_FORM);
+    setAddError(null);
     setShowAdd(false);
   }
 
@@ -221,6 +239,9 @@ export default function App() {
       return;
     }
     await supabase.from("applications").delete().eq("id", id);
+    const map = loadCategoryMap();
+    delete map[id];
+    saveCategoryMap(map);
     setApps((prev) => prev.filter((a) => a.id !== id));
     setSelected(null);
   }
@@ -239,10 +260,15 @@ export default function App() {
       .eq("id", selected.id)
       .select()
       .single();
-    if (!error && data)
+    if (!error && data) {
+      const map = loadCategoryMap();
+      if (editForm.category) map[data.id] = editForm.category;
+      else delete map[data.id];
+      saveCategoryMap(map);
       setApps((prev) =>
-        prev.map((a) => (a.id === selected.id ? fromRow(data) : a)),
+        prev.map((a) => (a.id === selected.id ? { ...fromRow(data), category: editForm.category || null } : a)),
       );
+    }
     setSelected(null);
     setEditForm(null);
   }
