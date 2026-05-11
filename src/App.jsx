@@ -20,6 +20,7 @@ function toRow(app) {
     reference_url: app.referenceUrl,
     notes: app.notes,
     job_description: app.jobDescription,
+    category: app.category || null,
   };
 }
 
@@ -37,6 +38,7 @@ function fromRow(row) {
     referenceUrl: row.reference_url,
     notes: row.notes,
     jobDescription: row.job_description,
+    category: row.category,
   };
 }
 
@@ -88,6 +90,7 @@ const EMPTY_FORM = {
   referenceUrl: "",
   notes: "",
   jobDescription: "",
+  category: "",
 };
 
 export default function App() {
@@ -102,6 +105,12 @@ export default function App() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [selected, setSelected] = useState(null);
   const [editForm, setEditForm] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [customCategories, setCustomCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("hot_categories") || "[]"); }
+    catch { return []; }
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -141,6 +150,39 @@ export default function App() {
   }, [session, guestMode]);
 
   const stats = computeStats(apps);
+
+  const appCategories = [...new Set(apps.filter((a) => a.category).map((a) => a.category))];
+  const allCategories = [...new Set([...customCategories, ...appCategories])];
+
+  const filteredApps = apps
+    .filter((a) => activeCategory === "All" || a.category === activeCategory)
+    .filter((a) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        a.company?.toLowerCase().includes(q) ||
+        a.role?.toLowerCase().includes(q) ||
+        a.status?.toLowerCase().includes(q) ||
+        a.salary?.toLowerCase().includes(q) ||
+        a.reference?.toLowerCase().includes(q) ||
+        a.notes?.toLowerCase().includes(q)
+      );
+    });
+
+  function addCategory(name) {
+    if (allCategories.includes(name)) { setActiveCategory(name); return; }
+    const updated = [...customCategories, name];
+    setCustomCategories(updated);
+    localStorage.setItem("hot_categories", JSON.stringify(updated));
+    setActiveCategory(name);
+  }
+
+  function deleteCategory(name) {
+    const updated = customCategories.filter((c) => c !== name);
+    setCustomCategories(updated);
+    localStorage.setItem("hot_categories", JSON.stringify(updated));
+    if (activeCategory === name) setActiveCategory("All");
+  }
 
   function saveGuestApps(updated) {
     sessionStorage.setItem("hot_guest_apps", JSON.stringify(updated));
@@ -273,11 +315,35 @@ export default function App() {
         <StatCard label="Offers:" value={stats.offers} />
       </div>
 
+      <CategoryTabs
+        categories={allCategories}
+        active={activeCategory}
+        onSelect={setActiveCategory}
+        onAdd={addCategory}
+        onDelete={deleteCategory}
+      />
+
       <div className="toolbar">
         <button className="btn-new" onClick={() => setShowAdd(true)}>
           <span className="btn-new-icon">+</span>
           New application
         </button>
+        <div className="search-wrap">
+          <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            className="search-input"
+            type="text"
+            placeholder="Search applications..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery("")}>×</button>
+          )}
+        </div>
         <div className="view-toggle">
           <button
             className={`view-btn${view === "list" ? " active" : ""}`}
@@ -310,12 +376,14 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {apps.length === 0 ? (
+              {filteredApps.length === 0 ? (
                 <tr className="empty-row">
-                  <td colSpan={8}>No applications yet — add your first one</td>
+                  <td colSpan={8}>
+                    {searchQuery ? "No applications match your search" : "No applications yet — add your first one"}
+                  </td>
                 </tr>
               ) : (
-                apps.map((app) => (
+                filteredApps.map((app) => (
                   <tr key={app.id} onClick={() => openDetail(app)}>
                     <td>{formatDate(app.date)}</td>
                     <td>{app.company}</td>
@@ -358,7 +426,7 @@ export default function App() {
           </table>
         </div>
       ) : (
-        <KanbanView apps={apps} onSelect={openDetail} />
+        <KanbanView apps={filteredApps} onSelect={openDetail} />
       )}
 
       {showAdd && (
@@ -394,7 +462,7 @@ export default function App() {
             />
           ) : (
             <form onSubmit={addApp}>
-              <AppForm form={form} setForm={setForm} />
+              <AppForm form={form} setForm={setForm} categories={allCategories} />
               <div className="form-actions">
                 <button
                   type="button"
@@ -421,7 +489,7 @@ export default function App() {
           }}
         >
           <form onSubmit={saveEdit}>
-            <AppForm form={editForm} setForm={setEditForm} />
+            <AppForm form={editForm} setForm={setEditForm} categories={allCategories} />
             <div className="form-actions">
               <button
                 type="button"
@@ -530,7 +598,7 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AppForm({ form, setForm }) {
+function AppForm({ form, setForm, categories = [] }) {
   function set(field) {
     return (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
   }
@@ -606,6 +674,20 @@ function AppForm({ form, setForm }) {
             </option>
           ))}
         </select>
+      </div>
+      <div className="form-group full">
+        <label className="form-label">Category</label>
+        <input
+          className="form-input"
+          type="text"
+          list="categories-datalist"
+          value={form.category || ""}
+          onChange={set("category")}
+          placeholder="e.g. Tech, Design, Remote…"
+        />
+        <datalist id="categories-datalist">
+          {categories.map((c) => <option key={c} value={c} />)}
+        </datalist>
       </div>
       <div className="form-group">
         <label className="form-label">Resume Version</label>
@@ -797,6 +879,64 @@ function SmartPaste({ onParsed }) {
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function CategoryTabs({ categories, active, onSelect, onAdd, onDelete }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  function handleAdd(e) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (name) onAdd(name);
+    setNewName("");
+    setAdding(false);
+  }
+
+  return (
+    <div className="category-tabs">
+      <button
+        className={`category-tab${active === "All" ? " active" : ""}`}
+        onClick={() => onSelect("All")}
+      >
+        All
+      </button>
+      {categories.map((cat) => (
+        <div key={cat} className={`category-tab-wrap${active === cat ? " active" : ""}`}>
+          <button
+            className={`category-tab${active === cat ? " active" : ""}`}
+            onClick={() => onSelect(cat)}
+          >
+            {cat}
+          </button>
+          <button
+            className="category-tab-delete"
+            onClick={(e) => { e.stopPropagation(); onDelete(cat); }}
+            title="Remove category"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      {adding ? (
+        <form onSubmit={handleAdd} className="category-add-form">
+          <input
+            className="category-add-input"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name…"
+            autoFocus
+            onBlur={() => { setAdding(false); setNewName(""); }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
+          />
+        </form>
+      ) : (
+        <button className="category-tab-add" onClick={() => setAdding(true)} title="Add category">
+          +
+        </button>
       )}
     </div>
   );
